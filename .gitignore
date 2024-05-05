@@ -1,9 +1,12 @@
-# vscode cache
+# ide cache
 .vscode/
+.idea/
+.cache/
+./compile_commands.json
 
 # xmake cache
-.xmake/
 build/
+makefile
 
 # Prerequisites
 *.d
