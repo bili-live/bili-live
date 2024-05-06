@@ -43,7 +43,8 @@ target "bililive"
     set_basename "blive"
     add_deps "imgui"
     set_kind "binary"
-    add_files "src/*.cpp"
+    add_files "src/**.cpp"
     if test_match "$(get_config "imgui-backend")" "dx*"; then
         add_syslinks "d3d11" "d3dcompiler" "gdi32" "dwmapi" "user32"
+        add_defines "IMGUI_USE_WIN32" "IMGUI_USE_DX11"
     fi
