@@ -1,6 +1,0 @@
-[submodule "lib/imgui"]
-	path = lib/imgui
-	url = https://github.com/bili-live/imgui.git
-[submodule "lib/ffmpeg"]
-	path = lib/ffmpeg
-	url = https://git.ffmpeg.org/ffmpeg.git

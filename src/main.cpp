@@ -8,14 +8,24 @@
 // - Introduction, links and more at the top of imgui.cpp
 
 #include "imgui.h"
+// #include "job/job.h"
 #include "plat/plat.h"
 
-bool show_demo_window = true;
-bool show_another_window = false;
+void test();
 
+// Main code
+int main(int, char **) {
+    blive_init(100, 100, 1280, 800, false);
+    blive_main_loop(test);
+    blive_clean();
+    return 0;
+}
+
+// Demo code
+static bool show_demo_window = true;
+static bool show_another_window = false;
+static ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 void test() {
-    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-
     ImGuiIO &io = ImGui::GetIO();
     // 1. Show the big demo window (Most of the sample code is in
     // ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear
@@ -34,14 +44,11 @@ void test() {
 
         ImGui::Text("This is some useful text."); // Display some text (you can
         // use a format strings too)
-        ImGui::Checkbox(
-            "Demo Window",
-            &show_demo_window);
+        ImGui::Checkbox("Demo Window", &show_demo_window);
         // Edit bools storing our window open/close state
         ImGui::Checkbox("Another Window", &show_another_window);
 
-        ImGui::SliderFloat("float", &f, 0.0f,
-                           1.0f);
+        ImGui::SliderFloat("float", &f, 0.0f, 1.0f);
         // Edit 1 float using a slider from 0.0f to 1.0f
         ImGui::ColorEdit3(
             "clear color",
@@ -70,13 +77,4 @@ void test() {
             show_another_window = false;
         ImGui::End();
     }
-}
-
-// Main code
-int main(int, char **) {
-    plat_init(100, 100, 1280, 800, false);
-    plat_main_loop(test);
-    // Cleanup
-    plat_clean();
-    return 0;
 }

@@ -3,6 +3,10 @@
 //
 
 #include "plat.h"
+// #include "job/job.h"
+
+#include <atomic>
+
 #include "imgui.h"
 
 #ifdef IMGUI_USE_DX11
@@ -18,7 +22,6 @@
 static ID3D11Device *g_pd3dDevice = nullptr;
 static ID3D11DeviceContext *g_pd3dDeviceContext = nullptr;
 static IDXGISwapChain *g_pSwapChain = nullptr;
-static UINT g_ResizeWidth = 0, g_ResizeHeight = 0;
 static ID3D11RenderTargetView *g_mainRenderTargetView = nullptr;
 
 bool CreateDeviceD3D(HWND hWnd);
@@ -99,7 +102,7 @@ void CleanupRenderTarget() {
     }
 }
 
-bool plat_init_backend(void *p) {
+bool plat_init_backend_dx11(void *p) {
     HWND hwnd = (HWND)p;
     if (!CreateDeviceD3D(hwnd)) {
         CleanupDeviceD3D();
@@ -107,11 +110,70 @@ bool plat_init_backend(void *p) {
     }
     return ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 }
-void plat_clean_backend() {
+void plat_clean_backend_dx11() {
     ImGui_ImplDX11_Shutdown();
     CleanupDeviceD3D();
 }
+void plat_resize_backend_dx11(const UINT w, const UINT h) {
+    if (w != 0 && h != 0) {
+        CleanupRenderTarget();
+        g_pSwapChain->ResizeBuffers(0, w, h, DXGI_FORMAT_UNKNOWN, 0);
+        CreateRenderTarget();
+    }
+}
+void plat_frame_begin_backend_dx11() { ImGui_ImplDX11_NewFrame(); }
+void plat_frame_render_backend_dx11() {
+    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+    ImGui::Render();
+    const float clear_color_with_alpha[4] = {
+        clear_color.x * clear_color.w, clear_color.y * clear_color.w,
+        clear_color.z * clear_color.w, clear_color.w};
+    g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView,
+                                            nullptr);
+    g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView,
+                                               clear_color_with_alpha);
+    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+}
+
+void plat_frame_end_backend_dx11() {
+    g_pSwapChain->Present(1, 0); // Present with vsync
+    // g_pSwapChain->Present(0, 0); // Present without vsync
+}
+
 #endif // IMGUI_USE_DX11
+
+bool plat_init_backend(void *p) {
+#ifdef IMGUI_USE_DX11
+    return plat_init_backend_dx11(p);
+#endif
+}
+void plat_clean_backend() {
+#ifdef IMGUI_USE_DX11
+    plat_clean_backend_dx11();
+#endif
+}
+void plat_resize_backend(const int w, const int h) {
+#ifdef IMGUI_USE_DX11
+    plat_resize_backend_dx11(w, h);
+#endif
+}
+
+void plat_frame_begin_backend() {
+#ifdef IMGUI_USE_DX11
+    plat_frame_begin_backend_dx11();
+#endif
+}
+void plat_frame_render_backend() {
+#ifdef IMGUI_USE_DX11
+    plat_frame_render_backend_dx11();
+#endif
+}
+
+void plat_frame_end_backend() {
+#ifdef IMGUI_USE_DX11
+    plat_frame_end_backend_dx11();
+#endif
+}
 
 #ifdef IMGUI_USE_WIN32
 // Forward declare message handler from imgui_impl_win32.cpp
@@ -128,18 +190,17 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_SIZE:
         if (wParam == SIZE_MINIMIZED)
             return 0;
-        g_ResizeWidth = (UINT)LOWORD(lParam); // Queue resize
-        g_ResizeHeight = (UINT)HIWORD(lParam);
+        plat_resize_backend(LOWORD(lParam), HIWORD(lParam));
         return 0;
     case WM_SYSCOMMAND:
         if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu
             return 0;
         break;
     case WM_DESTROY:
-        ::PostQuitMessage(0);
+        PostQuitMessage(0);
         return 0;
     }
-    return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+    return DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
 static HWND blive_hwnd = nullptr;
@@ -181,10 +242,28 @@ void plat_clean_win32() {
     UnregisterClassW(blive_wc.lpszClassName, blive_wc.hInstance);
 }
 
+void plat_frame_before_win32() {
+    MSG msg;
+    while (::PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
+        ::TranslateMessage(&msg);
+        ::DispatchMessage(&msg);
+        if (msg.message == WM_QUIT)
+            blive_stop();
+    }
+}
+
+void plat_frame_begin_win32() {
+    // ImGui_ImplDX11_NewFrame();
+    plat_frame_begin_backend();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+}
+
+void plat_frame_end_win32() { plat_frame_end_backend(); }
+
 #endif // IMGUI_USE_WIN32
 
-bool plat_init(int x, int y, int width, int height, bool fullscreen) {
-    bool ret = true;
+bool blive_init(int x, int y, int width, int height, bool fullscreen) {
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -198,66 +277,50 @@ bool plat_init(int x, int y, int width, int height, bool fullscreen) {
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
 #ifdef IMGUI_USE_WIN32
-    ret = plat_init_win32(x, y, width, height, fullscreen);
+    return plat_init_win32(x, y, width, height, fullscreen);
 #endif
-    return ret;
+    return false;
 }
 
-void plat_clean() {
+void blive_clean() {
 #ifdef IMGUI_USE_WIN32
     plat_clean_win32();
 #endif
     ImGui::DestroyContext();
 }
 
-void plat_main_loop(plat_main_loop_func func) {
-    // TODO: add defines for different platforms
-    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-    bool done = false;
-    while (!done) {
-        // Poll and handle messages (inputs, window resize, etc.)
-        // See the WndProc() function below for our to dispatch events to the
-        // Win32 backend.
-        MSG msg;
-        while (::PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
-            ::TranslateMessage(&msg);
-            ::DispatchMessage(&msg);
-            if (msg.message == WM_QUIT)
-                done = true;
-        }
-        if (done)
-            break;
+void plat_frame_before() {
+#ifdef IMGUI_USE_WIN32
+    plat_frame_before_win32();
+#endif
+}
 
-        // Handle window resize (we don't resize directly in the WM_SIZE
-        // handler)
-        if (g_ResizeWidth != 0 && g_ResizeHeight != 0) {
-            CleanupRenderTarget();
-            g_pSwapChain->ResizeBuffers(0, g_ResizeWidth, g_ResizeHeight,
-                                        DXGI_FORMAT_UNKNOWN, 0);
-            g_ResizeWidth = g_ResizeHeight = 0;
-            CreateRenderTarget();
-        }
+void plat_frame_begin() {
+#ifdef IMGUI_USE_WIN32
+    plat_frame_begin_win32();
+#endif
+}
 
-        // Start the Dear ImGui frame
-        ImGui_ImplDX11_NewFrame();
-        ImGui_ImplWin32_NewFrame();
-        ImGui::NewFrame();
+void plat_frame_render() { plat_frame_render_backend(); }
 
+void plat_frame_end() {
+#ifdef IMGUI_USE_WIN32
+    plat_frame_end_win32();
+#endif
+}
+
+static std::atomic_bool done = false;
+void blive_main_loop(plat_main_loop_func func) {
+    while (!done.load(std::memory_order_acquire)) {
+        plat_frame_before();
+        plat_frame_begin();
         func();
-
-        // Rendering
-        ImGui::Render();
-        const float clear_color_with_alpha[4] = {
-            clear_color.x * clear_color.w, clear_color.y * clear_color.w,
-            clear_color.z * clear_color.w, clear_color.w};
-        g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView,
-                                                nullptr);
-        g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView,
-                                                   clear_color_with_alpha);
-        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-
-        g_pSwapChain->Present(
-            1, 0); // Present with vsync
-                   // g_pSwapChain->Present(0, 0); // Present without vsync
+        plat_frame_render();
+        plat_frame_end();
     }
+}
+
+void blive_stop() {
+    if (!done.load(std::memory_order_acquire))
+        done.store(true, std::memory_order_release);
 }

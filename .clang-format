@@ -3,8 +3,8 @@
 BasedOnStyle: LLVM
 IndentWidth: 4
 AccessModifierOffset: -4
+AlwaysBreakTemplateDeclarations: Yes
 # AllowShortIfStatementsOnASingleLine: true
-# AlwaysBreakTemplateDeclarations: true
 # AllowShortBlocksOnASingleLine: 'false'
 # AllowShortIfStatementsOnASingleLine: Never
 # AllowShortLoopsOnASingleLine: 'false'

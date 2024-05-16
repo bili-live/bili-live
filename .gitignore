@@ -5,6 +5,7 @@
 ./compile_commands.json
 
 # xmake cache
+.xmake/
 build/
 makefile
 
