@@ -2,18 +2,16 @@
 // Created by lany on 24-5-6.
 //
 
-#include "plat.h"
-// #include "job/job.h"
+#include "gui.h"
+#include "config/config.h"
 
 #include <atomic>
 
 #include "imgui.h"
-
 #ifdef IMGUI_USE_DX11
 #include "imgui_impl_dx11.h"
 #include <d3d11.h>
 #endif
-
 #ifdef IMGUI_USE_WIN32
 #include "imgui_impl_win32.h"
 #endif
@@ -123,7 +121,7 @@ void plat_resize_backend_dx11(const UINT w, const UINT h) {
 }
 void plat_frame_begin_backend_dx11() { ImGui_ImplDX11_NewFrame(); }
 void plat_frame_render_backend_dx11() {
-    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+    ImVec4 clear_color = ImVec4(0.0f, 0.0f, 0.0f, 1.00f);
     ImGui::Render();
     const float clear_color_with_alpha[4] = {
         clear_color.x * clear_color.w, clear_color.y * clear_color.w,
@@ -137,7 +135,6 @@ void plat_frame_render_backend_dx11() {
 
 void plat_frame_end_backend_dx11() {
     g_pSwapChain->Present(1, 0); // Present with vsync
-    // g_pSwapChain->Present(0, 0); // Present without vsync
 }
 
 #endif // IMGUI_USE_DX11
@@ -187,10 +184,14 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return true;
 
     switch (msg) {
+    case WM_MOVE:
+        set_window_pos(LOWORD(lParam), HIWORD(lParam));
+        return 0;
     case WM_SIZE:
         if (wParam == SIZE_MINIMIZED)
             return 0;
         plat_resize_backend(LOWORD(lParam), HIWORD(lParam));
+        set_window_size(LOWORD(lParam), HIWORD(lParam));
         return 0;
     case WM_SYSCOMMAND:
         if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu
@@ -203,8 +204,8 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     return DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
-static HWND blive_hwnd = nullptr;
-static WNDCLASSEXW blive_wc = {0};
+static HWND plat_hwnd = nullptr;
+static WNDCLASSEXW plat_wc = {0};
 bool plat_init_win32(int x, int y, int width, int height, bool fullscreen) {
 
     HINSTANCE hInstance = GetModuleHandle(nullptr);
@@ -214,7 +215,7 @@ bool plat_init_win32(int x, int y, int width, int height, bool fullscreen) {
         nullptr,    nullptr,    nullptr, nullptr, L"blive", nullptr,
     };
     RegisterClassExW(&wc);
-    blive_wc = wc;
+    plat_wc = wc;
     HWND hwnd =
         CreateWindowW(wc.lpszClassName, L"blive", WS_OVERLAPPEDWINDOW, x, y,
                       width, height, nullptr, nullptr, wc.hInstance, nullptr);
@@ -231,15 +232,15 @@ bool plat_init_win32(int x, int y, int width, int height, bool fullscreen) {
     ShowWindow(hwnd, SW_SHOWDEFAULT);
     UpdateWindow(hwnd);
 
-    blive_hwnd = hwnd;
+    plat_hwnd = hwnd;
     return true;
 }
 
 void plat_clean_win32() {
     plat_clean_backend();
     ImGui_ImplWin32_Shutdown();
-    DestroyWindow(blive_hwnd);
-    UnregisterClassW(blive_wc.lpszClassName, blive_wc.hInstance);
+    DestroyWindow(plat_hwnd);
+    UnregisterClassW(plat_wc.lpszClassName, plat_wc.hInstance);
 }
 
 void plat_frame_before_win32() {
@@ -248,12 +249,11 @@ void plat_frame_before_win32() {
         ::TranslateMessage(&msg);
         ::DispatchMessage(&msg);
         if (msg.message == WM_QUIT)
-            blive_stop();
+            done.store(true, std::memory_order_release);
     }
 }
 
 void plat_frame_begin_win32() {
-    // ImGui_ImplDX11_NewFrame();
     plat_frame_begin_backend();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
@@ -263,7 +263,7 @@ void plat_frame_end_win32() { plat_frame_end_backend(); }
 
 #endif // IMGUI_USE_WIN32
 
-bool blive_init(int x, int y, int width, int height, bool fullscreen) {
+bool gui_init(int x, int y, int width, int height, bool fullscreen) {
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -282,7 +282,7 @@ bool blive_init(int x, int y, int width, int height, bool fullscreen) {
     return false;
 }
 
-void blive_clean() {
+void gui_clean() {
 #ifdef IMGUI_USE_WIN32
     plat_clean_win32();
 #endif
@@ -309,18 +309,10 @@ void plat_frame_end() {
 #endif
 }
 
-static std::atomic_bool done = false;
-void blive_main_loop(plat_main_loop_func func) {
-    while (!done.load(std::memory_order_acquire)) {
-        plat_frame_before();
-        plat_frame_begin();
-        func();
-        plat_frame_render();
-        plat_frame_end();
-    }
-}
-
-void blive_stop() {
-    if (!done.load(std::memory_order_acquire))
-        done.store(true, std::memory_order_release);
+void gui_frame(frame_func func) {
+    plat_frame_before();
+    plat_frame_begin();
+    func();
+    plat_frame_render();
+    plat_frame_end();
 }

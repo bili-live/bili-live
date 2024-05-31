@@ -1,23 +1,27 @@
-// Dear ImGui: standalone example application for DirectX 11
 
-// Learn about Dear ImGui:
-// - FAQ                  https://dearimgui.com/faq
-// - Getting Started      https://dearimgui.com/getting-started
-// - Documentation        https://dearimgui.com/docs (same as your local docs/
-// folder).
-// - Introduction, links and more at the top of imgui.cpp
 
+#include "config/config.h"
+#include "gui/gui.h"
 #include "imgui.h"
-// #include "job/job.h"
-#include "plat/plat.h"
+
+#include <atomic>
 
 void test();
 
+std::atomic_bool done = false;
 // Main code
-int main(int, char **) {
-    blive_init(100, 100, 1280, 800, false);
-    blive_main_loop(test);
-    blive_clean();
+int main(int argc, char **argv) {
+    if (argc > 1) {
+        config_init(argv[1]);
+    } else {
+        config_init(nullptr);
+    }
+    gui_init(100, 100, 1280, 800, false);
+    while (!done.load(std::memory_order_acquire)) {
+        gui_frame(test);
+    }
+    gui_clean();
+    config_save();
     return 0;
 }
 
