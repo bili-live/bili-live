@@ -11,17 +11,17 @@ void test();
 std::atomic_bool done = false;
 // Main code
 int main(int argc, char **argv) {
-    if (argc > 1) {
-        config_init(argv[1]);
-    } else {
-        config_init(nullptr);
-    }
+    // if (argc > 1) {
+    //     config_init(argv[1]);
+    // } else {
+    //     config_init(nullptr);
+    // }
     gui_init(100, 100, 1280, 800, false);
     while (!done.load(std::memory_order_acquire)) {
         gui_frame(test);
     }
     gui_clean();
-    config_save();
+    // config_save();
     return 0;
 }
 

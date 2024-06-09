@@ -16,6 +16,19 @@
 #include "imgui_impl_win32.h"
 #endif
 
+#ifdef IMGUI_USE_OPENGL3
+#include "imgui_impl_opengl3.h"
+#if defined(IMGUI_IMPL_OPENGL_ES2)
+#include <SDL2/SDL_opengles2.h>
+#else
+#include <SDL2/SDL_opengl.h>
+#endif
+#endif
+#ifdef IMGUI_USE_SDL2
+#include "imgui_impl_sdl2.h"
+#include <SDL2/SDL.h>
+#endif
+
 #ifdef IMGUI_USE_DX11
 static ID3D11Device *g_pd3dDevice = nullptr;
 static ID3D11DeviceContext *g_pd3dDeviceContext = nullptr;
@@ -143,6 +156,7 @@ bool plat_init_backend(void *p) {
 #ifdef IMGUI_USE_DX11
     return plat_init_backend_dx11(p);
 #endif
+    return false;
 }
 void plat_clean_backend() {
 #ifdef IMGUI_USE_DX11
@@ -263,6 +277,110 @@ void plat_frame_end_win32() { plat_frame_end_backend(); }
 
 #endif // IMGUI_USE_WIN32
 
+#ifdef IMGUI_USE_SDL2
+static SDL_Window* window = nullptr;
+static SDL_GLContext gl_context = nullptr;
+bool plat_init_sdl2(int x, int y, int width, int height, bool fullscreen){
+    // Setup SDL
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0)
+    {
+        printf("Error: %s\n", SDL_GetError());
+        return false;
+    }
+        // Decide GL+GLSL versions
+#if defined(IMGUI_IMPL_OPENGL_ES2)
+    // GL ES 2.0 + GLSL 100
+    const char* glsl_version = "#version 100";
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#elif defined(__APPLE__)
+    // GL 3.2 Core + GLSL 150
+    const char* glsl_version = "#version 150";
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG); // Always required on Mac
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+#else
+    // GL 3.0 + GLSL 130
+    const char* glsl_version = "#version 130";
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#endif
+
+    // From 2.0.18: Enable native IME.
+#ifdef SDL_HINT_IME_SHOW_UI
+    SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
+#endif
+
+    // Create window with graphics context
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+    SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+    window = SDL_CreateWindow("blive[sdl2+opengl3]", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, window_flags);
+    if (window == nullptr)
+    {
+        printf("Error: SDL_CreateWindow(): %s\n", SDL_GetError());
+        return false;
+    }
+
+    gl_context = SDL_GL_CreateContext(window);
+    SDL_GL_MakeCurrent(window, gl_context);
+
+    // TODO renderer backend init
+    // Setup Platform/Renderer backends
+    ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
+    ImGui_ImplOpenGL3_Init(glsl_version);
+    // TODO vsync config
+    SDL_GL_SetSwapInterval(1); // Enable vsync
+
+    return true;
+}
+
+void plat_clean_sdl2(){
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplSDL2_Shutdown();
+    SDL_GL_DeleteContext(gl_context);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+}
+
+void plat_frame_before_sdl2(){
+    SDL_Event event;
+    while (SDL_PollEvent(&event)){
+        ImGui_ImplSDL2_ProcessEvent(&event);
+        if (event.type == SDL_QUIT)
+            done.store(true, std::memory_order_release);
+        if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && event.window.windowID == SDL_GetWindowID(window))
+            done.store(true, std::memory_order_release);
+    }
+}
+
+void plat_frame_begin_sdl2(){
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplSDL2_NewFrame();
+    ImGui::NewFrame();
+}
+
+void plat_frame_end_sdl2(){
+    ImVec4 clear_color = ImVec4(0.0f, 0.0f, 0.0f, 1.00f);
+    // Rendering
+    ImGui::Render();
+    int w, h;
+    SDL_GetWindowSize(window, &w, &h);
+    glViewport(0, 0, w, h);
+    glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w);
+    glClear(GL_COLOR_BUFFER_BIT);
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    SDL_GL_SwapWindow(window);
+ }
+
+#endif // IMGUI_USE_SDL2
+
 bool gui_init(int x, int y, int width, int height, bool fullscreen) {
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -278,6 +396,8 @@ bool gui_init(int x, int y, int width, int height, bool fullscreen) {
     ImGui::StyleColorsDark();
 #ifdef IMGUI_USE_WIN32
     return plat_init_win32(x, y, width, height, fullscreen);
+#elif IMGUI_USE_SDL2
+    return plat_init_sdl2(x, y, width, height, fullscreen);
 #endif
     return false;
 }
@@ -285,6 +405,8 @@ bool gui_init(int x, int y, int width, int height, bool fullscreen) {
 void gui_clean() {
 #ifdef IMGUI_USE_WIN32
     plat_clean_win32();
+#elif IMGUI_USE_SDL2
+    plat_clean_sdl2();
 #endif
     ImGui::DestroyContext();
 }
@@ -292,12 +414,16 @@ void gui_clean() {
 void plat_frame_before() {
 #ifdef IMGUI_USE_WIN32
     plat_frame_before_win32();
+#elif IMGUI_USE_SDL2
+    plat_frame_before_sdl2();
 #endif
 }
 
 void plat_frame_begin() {
 #ifdef IMGUI_USE_WIN32
     plat_frame_begin_win32();
+#elif IMGUI_USE_SDL2
+    plat_frame_begin_sdl2();
 #endif
 }
 
@@ -306,6 +432,8 @@ void plat_frame_render() { plat_frame_render_backend(); }
 void plat_frame_end() {
 #ifdef IMGUI_USE_WIN32
     plat_frame_end_win32();
+#elif IMGUI_USE_SDL2
+    plat_frame_end_sdl2();
 #endif
 }
 
